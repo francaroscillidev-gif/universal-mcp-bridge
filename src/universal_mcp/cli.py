@@ -12,11 +12,12 @@ from universal_mcp.server import UniversalMCPBridge
 from universal_mcp.models import SecurityPolicy
 from universal_mcp.config import EnvInterpolator
 from universal_mcp.dashboard import create_dashboard_app
+from universal_mcp.optimizer import PromptOptimizer
 
 load_dotenv()
 console = Console()
 
-def build_bridge_from_config(config_file: str, audit_log: str = None, interactive_hitl: bool = False) -> UniversalMCPBridge:
+def build_bridge_from_config(config_file: str, audit_log: str = None, interactive_hitl: bool = False, optimize_prompts: bool = False) -> UniversalMCPBridge:
     with open(config_file, "r", encoding="utf-8") as f:
         raw_cfg = yaml.safe_load(f)
     
@@ -53,6 +54,9 @@ def build_bridge_from_config(config_file: str, audit_log: str = None, interactiv
         elif m_type == "directory":
             bridge.mount_directory(m_target)
 
+    if optimize_prompts:
+        bridge.optimize_descriptions()
+
     return bridge
 
 @click.group()
@@ -73,12 +77,13 @@ def cli():
 @click.option("--config", "config_file", help="Path to universal-mcp.yaml configuration file")
 @click.option("--audit-log", "audit_log", help="Path to write JSONL audit log entries")
 @click.option("--hitl", is_flag=True, help="Enable interactive terminal Human-in-the-Loop confirmations")
+@click.option("--optimize", is_flag=True, help="Enrich and optimize tool descriptions for LLM reasoning")
 @click.option("--transport", default="stdio", type=click.Choice(["stdio", "sse"]), help="MCP transport mode")
 @click.option("--port", default=8080, type=int, help="Port for SSE mode")
-def serve(openapi_path, graphql_url, base_url, script_path, cli_name, sqlite_path, postgres_dsn, redis_url, dir_path, config_file, audit_log, hitl, transport, port):
+def serve(openapi_path, graphql_url, base_url, script_path, cli_name, sqlite_path, postgres_dsn, redis_url, dir_path, config_file, audit_log, hitl, optimize, transport, port):
     """Start an MCP server exposing specified tools."""
     if config_file:
-        bridge = build_bridge_from_config(config_file, audit_log=audit_log, interactive_hitl=hitl)
+        bridge = build_bridge_from_config(config_file, audit_log=audit_log, interactive_hitl=hitl, optimize_prompts=optimize)
     else:
         bridge = UniversalMCPBridge(name="Universal-MCP", audit_log_path=audit_log, interactive_hitl=hitl)
 
@@ -99,6 +104,9 @@ def serve(openapi_path, graphql_url, base_url, script_path, cli_name, sqlite_pat
     if dir_path:
         bridge.mount_directory(dir_path)
 
+    if optimize:
+        bridge.optimize_descriptions()
+
     if not bridge.registered_tools:
         console.print("[bold red]Error:[/bold red] No tools mounted! Specify target or config.")
         sys.exit(1)
@@ -117,6 +125,21 @@ def serve(openapi_path, graphql_url, base_url, script_path, cli_name, sqlite_pat
         bridge.run_stdio()
     else:
         bridge.run_sse(port=port)
+
+@cli.command("optimize-prompts")
+@click.option("--config", "config_file", default="examples/universal-mcp.yaml", help="Path to YAML configuration")
+def optimize_prompts_cmd(config_file):
+    """Enrich tool descriptions and export an enhanced manifest for agent prompts."""
+    bridge = build_bridge_from_config(config_file)
+    count = bridge.optimize_descriptions()
+    console.print(f"[bold green]Successfully optimized prompt descriptions for {count} tools![/bold green]\n")
+    
+    table = Table(title="LLM-Optimized Tool Manifest")
+    table.add_column("Tool Name", style="cyan")
+    table.add_column("Optimized Prompt Description", style="white")
+    for t in bridge.registered_tools:
+        table.add_row(t.name, t.description)
+    console.print(table)
 
 @cli.command("dashboard")
 @click.option("--config", "config_file", default="examples/universal-mcp.yaml", help="Path to YAML configuration")

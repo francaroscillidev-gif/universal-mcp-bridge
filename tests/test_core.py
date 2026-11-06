@@ -12,6 +12,8 @@ from universal_mcp.security.circuit_breaker import CircuitBreaker
 from universal_mcp.security.metrics import get_prometheus_metrics
 from universal_mcp.registry import DynamicToolRegistry
 from universal_mcp.webhook import WebhookDispatcher
+from universal_mcp.optimizer import PromptOptimizer
+from universal_mcp.jobs import AsyncJobQueue
 from universal_mcp.config import EnvInterpolator
 from universal_mcp.watcher import FileWatcher
 from universal_mcp.models import SecurityPolicy, RateLimitPolicy, CachePolicy, HITLPolicy
@@ -95,6 +97,31 @@ def test_webhook_dispatcher():
     assert res["status"] == "received"
     assert "payment_succeeded" in res["prompt_notification"]
     assert len(dispatcher.history) == 1
+
+def test_prompt_optimizer():
+    bridge = UniversalMCPBridge(name="OptBridge")
+    bridge.mount_script("examples/text_analyzer.py")
+    original = bridge.registered_tools[0].description
+    count = bridge.optimize_descriptions()
+    assert count == 1
+    new_desc = bridge.registered_tools[0].description
+    assert "Accepts parameters" in new_desc
+    assert original in new_desc
+
+@pytest.mark.asyncio
+async def test_async_job_queue():
+    queue = AsyncJobQueue()
+
+    async def sample_task(x: int):
+        await asyncio.sleep(0.05)
+        return x * 2
+
+    job_id = queue.submit_job("multiply", sample_task, 21)
+    assert queue.get_job(job_id).status in ["PENDING", "RUNNING"]
+    await asyncio.sleep(0.1)
+    job = queue.get_job(job_id)
+    assert job.status == "COMPLETED"
+    assert job.result == "42"
 
 def test_secret_redactor():
     text = "Connecting with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret and api_key='sk-ant-123456789012345678'"

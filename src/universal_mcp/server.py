@@ -19,6 +19,8 @@ from universal_mcp.security.metrics import (
     TOOL_CALLS_TOTAL, TOOL_EXECUTION_DURATION_SECONDS,
     CACHE_HITS_TOTAL, RATE_LIMIT_EXCEEDED_TOTAL
 )
+from universal_mcp.optimizer import PromptOptimizer
+from universal_mcp.jobs import AsyncJobQueue
 from universal_mcp.watcher import FileWatcher
 from universal_mcp.config import EnvInterpolator
 from universal_mcp.adapters.openapi_adapter import OpenAPIAdapter
@@ -32,7 +34,7 @@ from universal_mcp.adapters.graphql_adapter import GraphQLAdapter
 class UniversalMCPBridge:
     """
     Enterprise-grade Bridge & Proxy engine with Prometheus metrics,
-    Circuit Breakers, Secret Redaction, Caching, and Multi-Source Adapters.
+    Circuit Breakers, Secret Redaction, Async Jobs, and Prompt Optimization.
     """
     def __init__(
         self,
@@ -65,14 +67,15 @@ class UniversalMCPBridge:
             self.hitl = None
             self.sensitive_tools = set()
 
-        # Circuit Breakers map: tool_name -> CircuitBreaker
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
         self.cb_policy = self.security.policy.circuit_breaker
 
         self.audit_logger = AuditLogger(audit_log_path)
+        self.job_queue = AsyncJobQueue()
         self.watcher = FileWatcher()
         self.registered_tools: List[DynamicToolDef] = []
         self._setup_system_resources()
+        self._setup_system_tools()
 
     def _setup_system_resources(self):
         @self.server.resource("bridge://manifest")
@@ -92,6 +95,20 @@ class UniversalMCPBridge:
                 }
             }
             return json.dumps(manifest, indent=2)
+
+    def _setup_system_tools(self):
+        """Registers built-in system tools for managing async jobs."""
+        @self.server.tool()
+        def job_status(job_id: str) -> str:
+            """Check the status and result of a background asynchronous job."""
+            job = self.job_queue.get_job(job_id)
+            if not job:
+                return json.dumps({"error": f"Job '{job_id}' not found"})
+            return json.dumps(job.model_dump(), indent=2)
+
+    def optimize_descriptions(self):
+        """Enriches all registered tools descriptions for better LLM comprehension."""
+        return PromptOptimizer.optimize_bridge_tools(self)
 
     def mount_openapi(self, spec_dict_or_path: Union[dict, str], base_url: Optional[str] = None, headers: Optional[Dict[str, str]] = None):
         interp_headers = EnvInterpolator.interpolate(headers) if headers else None
@@ -180,7 +197,6 @@ class UniversalMCPBridge:
         sensitive_tools = self.sensitive_tools
         redact = self.security.policy.redact_secrets
 
-        # Initialize Circuit Breaker for this tool
         if self.cb_policy and self.cb_policy.enabled:
             cb = CircuitBreaker(
                 failure_threshold=self.cb_policy.failure_threshold,
@@ -235,7 +251,6 @@ class UniversalMCPBridge:
                 else:
                     res = handler_func(**kwargs)
 
-                # Output Secret Redaction
                 if redact and isinstance(res, str):
                     res = PIISecretRedactor.redact_text(res)
 
