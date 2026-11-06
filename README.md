@@ -3,10 +3,11 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Prometheus Metrics](https://img.shields.io/badge/metrics-Prometheus-orange.svg)](http://localhost:8000/metrics)
+[![Health Status](https://img.shields.io/badge/health-passing-emerald.svg)](http://localhost:8000/healthz)
 
-> **Trasforma qualsiasi specifica OpenAPI, endpoint GraphQL, script Python/Bash, CLI o Database (SQLite, PostgreSQL, Redis) in un server MCP (Model Context Protocol) di livello enterprise al volo, con sandboxing avanzato, Prometheus metrics, Circuit Breaker, rate limiting, Human-in-the-Loop, live dashboard e zero-config.**
+> **Trasforma qualsiasi specifica OpenAPI, endpoint GraphQL, script Python/Bash, CLI o Database (SQLite, PostgreSQL, Redis) in un server MCP (Model Context Protocol) di livello enterprise al volo, con Hot-Mounting a runtime, Webhook Ingestion, Prometheus metrics, Circuit Breaker, sandboxing avanzato, live dashboard e zero-config.**
 
-L'adozione del **Model Context Protocol (MCP)** di Anthropic è in rapida ascesa come standard de facto per connettere LLM e agenti a tool esterni. **Universal MCP Bridge** elimina ogni lavoro manuale e permette di esporre istantaneamente qualsiasi risorsa preesistente in un server MCP ad alte prestazioni pronto per la produzione.
+L'adozione del **Model Context Protocol (MCP)** di Anthropic è lo standard de facto per connettere LLM e agenti a tool esterni. **Universal MCP Bridge** elimina ogni lavoro manuale e permette di esporre e gestire istantaneamente qualsiasi risorsa preesistente in un server MCP ad alte prestazioni pronto per la produzione.
 
 ---
 
@@ -21,31 +22,36 @@ L'adozione del **Model Context Protocol (MCP)** di Anthropic è in rapida ascesa
      - **SQLite**: Schema inspector e query SQL sicure read-only.
      - **PostgreSQL**: Connection pooling async (`asyncpg`) e ispezione DDL.
      - **Redis**: Navigazione chiavi per pattern e recupero valori (stringhe, hash, liste, set).
-2. **Sicurezza & Resilienza Enterprise**:
+2. **⚡ Runtime Hot-Mounting & Dynamic Registry**:
+   - Monta nuovi script, API o database a caldo via REST API (`/api/registry/mount`) o direttamente dall'interfaccia grafica della Dashboard, **senza riavviare il server MCP**.
+3. **📡 Inbound Webhooks & Event Ingestion (`/api/webhooks/{source}`)**:
+   - Ricevi eventi asincroni (GitHub push, Stripe payments, Datadog alerts) e trasformali in prompt notification strutturate pronte per il risveglio dell'agente LLM.
+4. **Sicurezza & Resilienza Enterprise**:
    - **Circuit Breaker Pattern**: Isolamento automatico dei tool a monte in caso di guasti ripetuti per prevenire cascate di timeout.
    - **Security Sandbox**: Esecuzione asincrona senza `shell=True`, tokenizzazione `shlex`, blacklist anti-injection, directory containment e timeout.
    - **Secret & PII Redactor**: Mascheramento automatico di token Bearer, API key e password da risposte e log di audit.
    - **Human-in-the-Loop (HITL)**: Modalità di conferma manuale/interattiva per comandi sensibili prima dell'esecuzione.
    - **Rate Limiting**: Algoritmo a finestra mobile configurabile.
    - **Response Caching (TTL)**: Cache in-memory per risposte a latenza 0ms e protezione da costi/rate-limit.
-3. **Osservabilità & Web Dashboard**:
-   - **Live Web Dashboard**: Interfaccia web moderna su porta 8000 con monitoraggio real-time di tool, stato server e feed live dell'audit log.
+5. **Osservabilità & Web Dashboard**:
+   - **Live Web Dashboard**: Interfaccia web moderna su porta 8000 con monitoraggio real-time di tool, stato server, feed webhooks e audit log.
    - **Prometheus `/metrics`**: Metriche native per Prometheus / Grafana (`mcp_tool_calls_total`, `mcp_tool_execution_duration_seconds`, `mcp_cache_hits_total`, `mcp_rate_limit_exceeded_total`).
+   - **Healthcheck `/healthz`**: Endpoint di liveness/readiness per Kubernetes e Docker.
    - **Audit Log Strutturato**: Scrittura in tempo reale su file `.jsonl` di latenze, argomenti, esiti ed errori.
    - **Hot-Reload Watcher**: Ricaricamento al volo in caso di modifica dei file montati.
-4. **Container & Cloud Ready**:
-   - Docker & Docker Compose per deployment cloud immediato.
 
 ---
 
 ## 🛠️ Comandi CLI
 
-### 1. Avviare la Live Web Dashboard (con Prometheus /metrics)
+### 1. Avviare la Live Web Dashboard & Gateway
 ```bash
 uv run universal-mcp dashboard --config examples/universal-mcp.yaml --port 8000
 ```
 - Dashboard Web: `http://localhost:8000`
 - Metriche Prometheus: `http://localhost:8000/metrics`
+- Healthcheck: `http://localhost:8000/healthz`
+- Endpoint Webhooks: `POST http://localhost:8000/api/webhooks/{source}`
 
 ### 2. Ispezione dei Tool (dry-run)
 ```bash

@@ -10,6 +10,8 @@ from universal_mcp.security.hitl import HumanInTheLoopManager, ConfirmationRequi
 from universal_mcp.security.redactor import PIISecretRedactor
 from universal_mcp.security.circuit_breaker import CircuitBreaker
 from universal_mcp.security.metrics import get_prometheus_metrics
+from universal_mcp.registry import DynamicToolRegistry
+from universal_mcp.webhook import WebhookDispatcher
 from universal_mcp.config import EnvInterpolator
 from universal_mcp.watcher import FileWatcher
 from universal_mcp.models import SecurityPolicy, RateLimitPolicy, CachePolicy, HITLPolicy
@@ -63,7 +65,6 @@ def test_circuit_breaker():
     cb.record_failure()
     assert cb.state == "OPEN"
     assert cb.can_execute() is False
-    # Test recovery
     import time
     time.sleep(0.15)
     assert cb.can_execute() is True
@@ -75,6 +76,25 @@ def test_prometheus_metrics():
     metrics_data, content_type = get_prometheus_metrics()
     assert b"mcp_tool_calls_total" in metrics_data
     assert "text/plain" in content_type
+
+def test_dynamic_registry_hot_mount():
+    bridge = UniversalMCPBridge(name="RegistryTest")
+    registry = DynamicToolRegistry(bridge)
+    res = registry.register_script_tool("examples/text_analyzer.py")
+    assert res["success"] is True
+    assert "run_text_analyzer" in res["tools"]
+    assert len(bridge.registered_tools) == 1
+
+def test_webhook_dispatcher():
+    dispatcher = WebhookDispatcher(secret_token="secret123")
+    assert dispatcher.verify_auth("secret123") is True
+    assert dispatcher.verify_auth("Bearer secret123") is True
+    assert dispatcher.verify_auth("wrong") is False
+
+    res = dispatcher.process_incoming_event("stripe", "payment_succeeded", {"amount": 100})
+    assert res["status"] == "received"
+    assert "payment_succeeded" in res["prompt_notification"]
+    assert len(dispatcher.history) == 1
 
 def test_secret_redactor():
     text = "Connecting with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret and api_key='sk-ant-123456789012345678'"
