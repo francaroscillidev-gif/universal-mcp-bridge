@@ -1,0 +1,32 @@
+name: "Demo-Universal-MCP"
+audit_log: "examples/mcp_audit.jsonl"
+
+security:
+  timeout_seconds: 15
+  rate_limit:
+    max_requests: 100
+    window_seconds: 60
+  allowed_commands:
+    - python3
+    - bash
+    - date
+    - uptime
+    - df
+    - curl
+    - jq
+  blocked_commands:
+    - "rm -rf"
+    - "mkfs"
+    - "dd"
+mounts:
+  - type: openapi
+    target: "examples/petstore.json"
+  - type: script
+    target: "examples/text_analyzer.py"
+  - type: script
+    target: "examples/sys_health.sh"
+  - type: sqlite
+    target: "examples/sample.db"
+    read_only: true
+  - type: cli
+    target: "curl"

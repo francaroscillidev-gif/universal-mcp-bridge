@@ -1,0 +1,48 @@
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from enum import Enum
+
+class AdapterType(str, Enum):
+    OPENAPI = "openapi"
+    CLI = "cli"
+    SCRIPT = "script"
+    SQLITE = "sqlite"
+
+class RateLimitPolicy(BaseModel):
+    max_requests: int = Field(default=60, description="Max requests in window")
+    window_seconds: int = Field(default=60, description="Time window in seconds")
+
+class CachePolicy(BaseModel):
+    enabled: bool = Field(default=False, description="Enable response caching")
+    default_ttl_seconds: int = Field(default=60, description="Default cache TTL")
+    max_entries: int = Field(default=1000, description="Max cache entries")
+
+class SecurityPolicy(BaseModel):
+    allowed_commands: Optional[List[str]] = Field(default=None, description="Whitelist of allowed executable commands")
+    blocked_commands: List[str] = Field(
+        default=["rm -rf", "mkfs", "dd", "shutdown", "reboot", ":(){ :|:& };:"],
+        description="Forbidden command patterns"
+    )
+    timeout_seconds: int = Field(default=30, description="Execution timeout in seconds")
+    allowed_dirs: Optional[List[str]] = Field(default=None, description="Allowed working directories")
+    blocked_patterns: List[str] = Field(
+        default=[r"(\||;|&&|\|\||`|\$\().*(rm|dd|mkfs|sh|bash)"],
+        description="Dangerous shell injection regex patterns"
+    )
+    max_output_length: int = Field(default=100000, description="Max response string size")
+    rate_limit: Optional[RateLimitPolicy] = Field(default=None, description="Optional rate limiter configuration")
+    cache: Optional[CachePolicy] = Field(default=None, description="Optional TTL cache configuration")
+
+class ToolParameter(BaseModel):
+    name: str
+    type: str = "string"  # string, integer, float, boolean, list, object
+    description: str = ""
+    required: bool = False
+    default: Optional[Any] = None
+    choices: Optional[List[Any]] = None
+
+class DynamicToolDef(BaseModel):
+    name: str
+    description: str
+    parameters: List[ToolParameter] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
