@@ -93,11 +93,15 @@ uv run pytest
 
 ---
 
-## 👤 Autore & Contatti
+## 📬 Contact, Support & Commercial Inquiries
 
-- **Autore**: franca roscilli
+If you have questions, feedback, enterprise integration requests, or custom agent governance needs, feel free to reach out directly:
+
+- **Lead Developer & Maintainer**: Franca Roscilli
 - **Email**: [francaroscillidev@gmail.com](mailto:francaroscillidev@gmail.com)
 - **GitHub**: [@francaroscillidev-gif](https://github.com/francaroscillidev-gif)
+- **Bug Reports & Feature Requests**: [Open an issue on GitHub](https://github.com/francaroscillidev-gif/universal-mcp-bridge/issues)
+
 
 ---
 
