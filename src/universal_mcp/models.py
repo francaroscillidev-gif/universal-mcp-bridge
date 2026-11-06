@@ -7,6 +7,8 @@ class AdapterType(str, Enum):
     CLI = "cli"
     SCRIPT = "script"
     SQLITE = "sqlite"
+    POSTGRES = "postgres"
+    REDIS = "redis"
 
 class RateLimitPolicy(BaseModel):
     max_requests: int = Field(default=60, description="Max requests in window")
@@ -16,6 +18,10 @@ class CachePolicy(BaseModel):
     enabled: bool = Field(default=False, description="Enable response caching")
     default_ttl_seconds: int = Field(default=60, description="Default cache TTL")
     max_entries: int = Field(default=1000, description="Max cache entries")
+
+class HITLPolicy(BaseModel):
+    require_confirmation: bool = Field(default=False, description="Require human approval for sensitive tools")
+    sensitive_tools: List[str] = Field(default_factory=list, description="Explicit tools requiring approval")
 
 class SecurityPolicy(BaseModel):
     allowed_commands: Optional[List[str]] = Field(default=None, description="Whitelist of allowed executable commands")
@@ -32,6 +38,7 @@ class SecurityPolicy(BaseModel):
     max_output_length: int = Field(default=100000, description="Max response string size")
     rate_limit: Optional[RateLimitPolicy] = Field(default=None, description="Optional rate limiter configuration")
     cache: Optional[CachePolicy] = Field(default=None, description="Optional TTL cache configuration")
+    hitl: Optional[HITLPolicy] = Field(default=None, description="Human-in-the-loop confirmation policy")
 
 class ToolParameter(BaseModel):
     name: str

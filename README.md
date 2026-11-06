@@ -1,66 +1,68 @@
 # Universal MCP Bridge & Proxy 🌉⚡
 
-> **Trasforma qualsiasi specifica OpenAPI, script Python/Bash, CLI o Database SQLite in un server MCP (Model Context Protocol) al volo, con sandboxing avanzato, rate limiting, audit logging e zero-config scaffolding.**
+[![CI/CD](https://github.com/francaroscillidev-gif/universal-mcp-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/francaroscillidev-gif/universal-mcp-bridge/actions)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-L'adozione del **Model Context Protocol (MCP)** di Anthropic è in rapida ascesa come standard de facto per connettere LLM e agenti a tool esterni. **Universal MCP Bridge** elimina il lavoro manuale e permette di esporre istantaneamente qualsiasi risorsa preesistente in un server MCP ad alte prestazioni pronto per la produzione.
+> **Trasforma qualsiasi specifica OpenAPI, script Python/Bash, CLI o Database (SQLite, PostgreSQL, Redis) in un server MCP (Model Context Protocol) di livello enterprise al volo, con sandboxing avanzato, rate limiting, Human-in-the-Loop, live dashboard e zero-config.**
+
+L'adozione del **Model Context Protocol (MCP)** di Anthropic è in rapida ascesa come standard de facto per connettere LLM e agenti a tool esterni. **Universal MCP Bridge** elimina ogni lavoro manuale e permette di esporre istantaneamente qualsiasi risorsa preesistente in un server MCP ad alte prestazioni pronto per la produzione.
 
 ---
 
-## 🚀 Nuove Funzionalità & Architettura
+## 🚀 Architettura & Funzionalità
 
-1. **Adattatore Database SQLite (`SQLiteAdapter`)**:
-   - Connessione immediata a qualsiasi file SQLite (`.db`, `.sqlite`).
-   - Generazione automatica di tool per esplorazione dello schema (`db_<name>_schema`) ed esecuzione query protette (`db_<name>_query`).
-   - Modalità read-only sicura con blocco delle query mutative (`INSERT`, `UPDATE`, `DELETE`, `DROP`).
-2. **Security & Rate Limiting a Finestra Mobile**:
-   - Protezione da overflow di chiamate LLM con policy configurabile (`max_requests` in `window_seconds`).
-   - Sandboxing senza `shell=True` con tokenizzazione `shlex`, blacklist di espressioni pericolose (`rm -rf`, fork bomb, injection) e whitelist di comandi.
-3. **Audit Logging Strutturato (JSONL)**:
-   - Tracciamento temporale di ogni invocazione di tool, argomenti, tempo di latenza (`duration_ms`), esito e messaggi d'errore.
-4. **Esposizione Dinamica di Risorse MCP (`bridge://manifest`)**:
-   - Gli LLM possono leggere direttamente lo stato e il catalogo del server come MCP Resource standard.
-5. **Comando `universal-mcp init`**:
-   - Generazione istantanea del file template `universal-mcp.yaml`.
-6. **Containerizzazione Docker & Docker Compose**:
-   - Immagine container multi-stage pronta per il deployment in cloud (SSE mode o proxy HTTP).
+1. **Adattatori Multi-Sorgente**:
+   - **OpenAPI / REST**: Mappa automaticamente endpoint con conversione tipi, query params e body JSON.
+   - **Script (Python & Bash)**: Ispezione docstring/commenti, argomenti CLI e standard input.
+   - **CLI Tools**: Ispezione automatica dei sotto-comandi tramite `--help` (`git`, `curl`, `jq`, ecc.).
+   - **Database Relazionali & In-Memory**:
+     - **SQLite**: Schema inspector e query SQL sicure read-only.
+     - **PostgreSQL**: Connection pooling async (`asyncpg`) e ispezione DDL.
+     - **Redis**: Navigazione chiavi per pattern e recupero valori (stringhe, hash, liste, set).
+2. **Sicurezza Enterprise**:
+   - **Security Sandbox**: Esecuzione asincrona senza `shell=True`, tokenizzazione `shlex`, blacklist anti-injection, directory containment e timeout.
+   - **Human-in-the-Loop (HITL)**: Modalità di conferma manuale/interattiva per comandi sensibili prima dell'esecuzione.
+   - **Rate Limiting**: Algoritmo a finestra mobile configurabile.
+   - **Response Caching (TTL)**: Cache in-memory per risposte a latenza 0ms e protezione da costi/rate-limit.
+3. **Osservabilità & Web Dashboard**:
+   - **Live Web Dashboard**: Interfaccia web moderna su porta 8000 con monitoraggio real-time di tool, stato server e feed live dell'audit log.
+   - **Audit Log Strutturato**: Scrittura in tempo reale su file `.jsonl` di latenze, argomenti, esiti ed errori.
+   - **Hot-Reload Watcher**: Ricaricamento al volo in caso di modifica dei file montati.
+4. **CI/CD & Distribuzione**:
+   - Workflow GitHub Actions per test multi-OS (Linux, macOS) e rilascio automatico su PyPI.
+   - Docker & Docker Compose per deployment cloud immediato.
 
 ---
 
 ## 🛠️ Comandi CLI
 
-### 1. Inizializzare un nuovo progetto
+### 1. Avviare la Live Web Dashboard
 ```bash
-uv run universal-mcp init --name "Agent-Production-Bridge"
+uv run universal-mcp dashboard --config examples/universal-mcp.yaml --port 8000
 ```
+Apri il browser su `http://localhost:8000` per monitorare i tool e visualizzare i log live.
 
 ### 2. Ispezione dei Tool (dry-run)
 ```bash
 uv run universal-mcp inspect --config examples/universal-mcp.yaml
 ```
 
-Output:
-```text
-                  Universal MCP Bridge - Discovered Tools (7)                   
-┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Tool Name         ┃ Parameters                  ┃ Description                ┃
-┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ findPetsByStatus  │ status: string              │ Finds Pets by status       │
-│ getPetById        │ petId: integer              │ Find pet by ID             │
-│ run_text_analyzer │ args: string, stdin_input   │ Calculate SHA256 checksum  │
-│ run_sys_health    │ args: string                │ Quick system health check  │
-│ db_sample_schema  │ none                        │ Inspect tables & schema    │
-│ db_sample_query   │ query: string, limit: int   │ Run SQL query (READ-ONLY)  │
-│ exec_curl         │ args: string                │ Executes 'curl'            │
-└───────────────────┴─────────────────────────────┴────────────────────────────┘
-```
-
 ### 3. Avvio del Server MCP (stdio o SSE)
 ```bash
-# Modalità standard I/O per desktop client (Claude, Cursor, Antigravity)
+# Modalità stdio per Claude Desktop, Cursor, Antigravity
 uv run universal-mcp serve --config examples/universal-mcp.yaml --transport stdio
 
-# Modalità SSE per rete o microservizi
+# Modalità con Human-in-the-Loop interattivo nel terminale
+uv run universal-mcp serve --config examples/universal-mcp.yaml --hitl
+
+# Modalità SSE per microservizi di rete
 uv run universal-mcp serve --config examples/universal-mcp.yaml --transport sse --port 8080
+```
+
+### 4. Esportare la configurazione per Claude Desktop / Cursor
+```bash
+uv run universal-mcp export-client-config --config examples/universal-mcp.yaml
 ```
 
 ---
@@ -87,3 +89,8 @@ uv run pytest
 - **Email**: [francaroscillidev@gmail.com](mailto:francaroscillidev@gmail.com)
 - **GitHub**: [@francaroscillidev-gif](https://github.com/francaroscillidev-gif)
 
+---
+
+## 📜 Licenza
+
+Distribuito sotto licenza **Apache 2.0**. Consulta il file `LICENSE` per maggiori dettagli.
