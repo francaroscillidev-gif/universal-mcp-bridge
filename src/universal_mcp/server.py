@@ -14,6 +14,11 @@ from universal_mcp.security.audit import AuditLogger
 from universal_mcp.security.cache import ResponseCache
 from universal_mcp.security.hitl import HumanInTheLoopManager, ConfirmationRequiredError
 from universal_mcp.security.redactor import PIISecretRedactor
+from universal_mcp.security.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from universal_mcp.security.metrics import (
+    TOOL_CALLS_TOTAL, TOOL_EXECUTION_DURATION_SECONDS,
+    CACHE_HITS_TOTAL, RATE_LIMIT_EXCEEDED_TOTAL
+)
 from universal_mcp.watcher import FileWatcher
 from universal_mcp.config import EnvInterpolator
 from universal_mcp.adapters.openapi_adapter import OpenAPIAdapter
@@ -26,8 +31,8 @@ from universal_mcp.adapters.graphql_adapter import GraphQLAdapter
 
 class UniversalMCPBridge:
     """
-    Enterprise-grade Bridge & Proxy engine that dynamically transforms
-    OpenAPI, GraphQL, Scripts, CLIs, SQLite, PostgreSQL and Redis into standard MCP servers.
+    Enterprise-grade Bridge & Proxy engine with Prometheus metrics,
+    Circuit Breakers, Secret Redaction, Caching, and Multi-Source Adapters.
     """
     def __init__(
         self,
@@ -60,6 +65,10 @@ class UniversalMCPBridge:
             self.hitl = None
             self.sensitive_tools = set()
 
+        # Circuit Breakers map: tool_name -> CircuitBreaker
+        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+        self.cb_policy = self.security.policy.circuit_breaker
+
         self.audit_logger = AuditLogger(audit_log_path)
         self.watcher = FileWatcher()
         self.registered_tools: List[DynamicToolDef] = []
@@ -78,7 +87,8 @@ class UniversalMCPBridge:
                     "has_rate_limit": self.rate_limiter is not None,
                     "has_cache": self.cache is not None,
                     "has_hitl": self.hitl is not None,
-                    "redact_secrets": self.security.policy.redact_secrets
+                    "redact_secrets": self.security.policy.redact_secrets,
+                    "has_circuit_breaker": self.cb_policy.enabled if self.cb_policy else False
                 }
             }
             return json.dumps(manifest, indent=2)
@@ -170,14 +180,31 @@ class UniversalMCPBridge:
         sensitive_tools = self.sensitive_tools
         redact = self.security.policy.redact_secrets
 
+        # Initialize Circuit Breaker for this tool
+        if self.cb_policy and self.cb_policy.enabled:
+            cb = CircuitBreaker(
+                failure_threshold=self.cb_policy.failure_threshold,
+                recovery_timeout_seconds=self.cb_policy.recovery_timeout_seconds
+            )
+            self.circuit_breakers[tool_def.name] = cb
+        else:
+            cb = None
+
         async def wrapped_handler(**kwargs):
-            # Redact arguments for audit logging
             logged_args = PIISecretRedactor.redact_dict(kwargs) if redact else kwargs
 
-            # HITL confirmation check
+            # Circuit Breaker check
+            if cb and not cb.can_execute():
+                err_msg = f"Circuit breaker OPEN for tool '{tool_def.name}': upstream is failing or cooling down."
+                TOOL_CALLS_TOTAL.labels(tool_name=tool_def.name, status="circuit_open").inc()
+                audit_logger.log_call(tool_def.name, logged_args, 0, False, err_msg)
+                return f"Error: {err_msg}"
+
+            # HITL check
             if hitl and (not sensitive_tools or tool_def.name in sensitive_tools):
                 approved = await hitl.verify_approval(tool_def.name, logged_args)
                 if not approved:
+                    TOOL_CALLS_TOTAL.labels(tool_name=tool_def.name, status="hitl_rejected").inc()
                     audit_logger.log_call(tool_def.name, logged_args, 0, False, "User rejected execution")
                     return f"Action '{tool_def.name}' was rejected by human operator."
 
@@ -185,6 +212,8 @@ class UniversalMCPBridge:
             if cache:
                 cached_res = cache.get(tool_def.name, kwargs)
                 if cached_res is not None:
+                    CACHE_HITS_TOTAL.labels(tool_name=tool_def.name).inc()
+                    TOOL_CALLS_TOTAL.labels(tool_name=tool_def.name, status="cache_hit").inc()
                     return cached_res
 
             # Rate limit check
@@ -192,6 +221,8 @@ class UniversalMCPBridge:
                 try:
                     rate_limiter.check_and_record()
                 except RateLimitExceededError as e:
+                    RATE_LIMIT_EXCEEDED_TOTAL.labels(tool_name=tool_def.name).inc()
+                    TOOL_CALLS_TOTAL.labels(tool_name=tool_def.name, status="rate_limited").inc()
                     audit_logger.log_call(tool_def.name, logged_args, 0, False, str(e))
                     return f"Error: {e}"
 
@@ -204,21 +235,29 @@ class UniversalMCPBridge:
                 else:
                     res = handler_func(**kwargs)
 
-                # Secret redaction from response output
+                # Output Secret Redaction
                 if redact and isinstance(res, str):
                     res = PIISecretRedactor.redact_text(res)
 
                 if cache and success:
                     cache.set(tool_def.name, kwargs, res)
 
+                if cb:
+                    cb.record_success()
+
+                TOOL_CALLS_TOTAL.labels(tool_name=tool_def.name, status="success").inc()
                 return res
             except Exception as e:
                 success = False
                 error_msg = str(e)
+                if cb:
+                    cb.record_failure()
+                TOOL_CALLS_TOTAL.labels(tool_name=tool_def.name, status="error").inc()
                 return f"Execution Error: {e}"
             finally:
-                duration_ms = (time.time() - start_time) * 1000
-                audit_logger.log_call(tool_def.name, logged_args, duration_ms, success, error_msg)
+                duration = time.time() - start_time
+                TOOL_EXECUTION_DURATION_SECONDS.labels(tool_name=tool_def.name).observe(duration)
+                audit_logger.log_call(tool_def.name, logged_args, duration * 1000, success, error_msg)
 
         wrapped_handler.__name__ = tool_def.name
         wrapped_handler.__doc__ = tool_def.description

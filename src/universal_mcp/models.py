@@ -20,6 +20,11 @@ class CachePolicy(BaseModel):
     default_ttl_seconds: int = Field(default=60, description="Default cache TTL")
     max_entries: int = Field(default=1000, description="Max cache entries")
 
+class CircuitBreakerPolicy(BaseModel):
+    enabled: bool = Field(default=True, description="Enable circuit breaker protection")
+    failure_threshold: int = Field(default=5, description="Consecutive errors before opening circuit")
+    recovery_timeout_seconds: float = Field(default=30.0, description="Cooldown time before retry")
+
 class HITLPolicy(BaseModel):
     require_confirmation: bool = Field(default=False, description="Require human approval for sensitive tools")
     sensitive_tools: List[str] = Field(default_factory=list, description="Explicit tools requiring approval")
@@ -40,11 +45,12 @@ class SecurityPolicy(BaseModel):
     redact_secrets: bool = Field(default=True, description="Automatically mask tokens and passwords in output")
     rate_limit: Optional[RateLimitPolicy] = Field(default=None, description="Optional rate limiter configuration")
     cache: Optional[CachePolicy] = Field(default=None, description="Optional TTL cache configuration")
+    circuit_breaker: Optional[CircuitBreakerPolicy] = Field(default_factory=CircuitBreakerPolicy, description="Circuit breaker configuration")
     hitl: Optional[HITLPolicy] = Field(default=None, description="Human-in-the-loop confirmation policy")
 
 class ToolParameter(BaseModel):
     name: str
-    type: str = "string"  # string, integer, float, boolean, list, object
+    type: str = "string"
     description: str = ""
     required: bool = False
     default: Optional[Any] = None

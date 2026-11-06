@@ -1,9 +1,10 @@
 import os
 import json
 from typing import List, Dict, Any
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from universal_mcp.security.metrics import get_prometheus_metrics
 
 def create_dashboard_app(bridge) -> FastAPI:
     app = FastAPI(title="Universal MCP Bridge Dashboard")
@@ -15,17 +16,29 @@ def create_dashboard_app(bridge) -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.get("/metrics")
+    async def metrics():
+        data, content_type = get_prometheus_metrics()
+        return Response(content=data, media_type=content_type)
+
     @app.get("/api/status")
     async def get_status():
+        cb_status = {}
+        for name, cb in bridge.circuit_breakers.items():
+            cb_status[name] = {"state": cb.state, "failures": cb.failure_count}
+
         return {
             "name": bridge.name,
             "tool_count": len(bridge.registered_tools),
             "tools": [t.model_dump() for t in bridge.registered_tools],
+            "circuit_breakers": cb_status,
             "security": {
                 "timeout": bridge.security.policy.timeout_seconds,
                 "has_whitelist": bridge.security.policy.allowed_commands is not None,
                 "has_rate_limit": bridge.rate_limiter is not None,
                 "has_cache": bridge.cache is not None,
+                "has_hitl": bridge.hitl is not None,
+                "redact_secrets": bridge.security.policy.redact_secrets,
             }
         }
 
@@ -52,9 +65,7 @@ def create_dashboard_app(bridge) -> FastAPI:
             return JSONResponse(status_code=404, content={"error": f"Tool '{tool_name}' not found"})
 
         try:
-            # Execute through MCP Server call_tool
             res = await bridge.server.call_tool(tool_name, payload)
-            # res is CallToolResult from MCP
             text_contents = []
             if hasattr(res, "content"):
                 for c in res.content:
@@ -83,8 +94,13 @@ def create_dashboard_app(bridge) -> FastAPI:
         <h1 class="text-3xl font-extrabold tracking-tight text-indigo-400">🌉 Universal MCP Bridge</h1>
         <p class="text-sm text-slate-400 mt-1">Autonomous Agent Tool Server & Proxy Dashboard</p>
       </div>
-      <div id="stats-badge" class="bg-indigo-950 border border-indigo-500/30 px-4 py-2 rounded-lg text-sm">
-        Loading status...
+      <div class="flex items-center gap-3">
+        <a href="/metrics" target="_blank" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-600 px-3 py-1.5 rounded text-amber-300 font-mono">
+          📊 Prometheus /metrics
+        </a>
+        <div id="stats-badge" class="bg-indigo-950 border border-indigo-500/30 px-4 py-2 rounded-lg text-sm">
+          Loading status...
+        </div>
       </div>
     </header>
 
@@ -127,11 +143,20 @@ def create_dashboard_app(bridge) -> FastAPI:
 
         // Render Tools
         const container = document.getElementById('tools-container');
-        container.innerHTML = status.tools.map(t => `
+        container.innerHTML = status.tools.map(t => {
+          const cb = status.circuit_breakers && status.circuit_breakers[t.name];
+          const cbBadge = cb && cb.state === 'OPEN' 
+            ? '<span class="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded text-[10px]">CIRCUIT OPEN</span>'
+            : '<span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-[10px]">HEALTHY</span>';
+
+          return `
           <div class="p-5 bg-slate-800 border border-slate-700/80 rounded-xl hover:border-indigo-500/50 transition">
             <div class="flex justify-between items-start">
               <div>
-                <h3 class="font-mono text-lg font-bold text-indigo-300">${t.name}</h3>
+                <div class="flex items-center gap-2">
+                  <h3 class="font-mono text-lg font-bold text-indigo-300">${t.name}</h3>
+                  ${cbBadge}
+                </div>
                 <p class="text-sm text-slate-300 mt-1">${t.description}</p>
               </div>
             </div>
@@ -144,7 +169,8 @@ def create_dashboard_app(bridge) -> FastAPI:
               `).join('') : '<span class="text-slate-500 italic">none</span>'}
             </div>
           </div>
-        `).join('');
+          `;
+        }).join('');
 
         // Render Audit Logs
         const auditBox = document.getElementById('audit-feed');
