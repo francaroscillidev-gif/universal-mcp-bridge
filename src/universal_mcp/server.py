@@ -13,6 +13,7 @@ from universal_mcp.security.rate_limiter import RateLimiter, RateLimitExceededEr
 from universal_mcp.security.audit import AuditLogger
 from universal_mcp.security.cache import ResponseCache
 from universal_mcp.security.hitl import HumanInTheLoopManager, ConfirmationRequiredError
+from universal_mcp.security.redactor import PIISecretRedactor
 from universal_mcp.watcher import FileWatcher
 from universal_mcp.config import EnvInterpolator
 from universal_mcp.adapters.openapi_adapter import OpenAPIAdapter
@@ -21,11 +22,12 @@ from universal_mcp.adapters.cli_adapter import CLIAdapter
 from universal_mcp.adapters.sqlite_adapter import SQLiteAdapter
 from universal_mcp.adapters.postgres_adapter import PostgresAdapter
 from universal_mcp.adapters.redis_adapter import RedisAdapter
+from universal_mcp.adapters.graphql_adapter import GraphQLAdapter
 
 class UniversalMCPBridge:
     """
     Enterprise-grade Bridge & Proxy engine that dynamically transforms
-    OpenAPI, Scripts, CLIs, SQLite, PostgreSQL and Redis into standard MCP servers.
+    OpenAPI, GraphQL, Scripts, CLIs, SQLite, PostgreSQL and Redis into standard MCP servers.
     """
     def __init__(
         self,
@@ -75,7 +77,8 @@ class UniversalMCPBridge:
                     "has_whitelist": self.security.policy.allowed_commands is not None,
                     "has_rate_limit": self.rate_limiter is not None,
                     "has_cache": self.cache is not None,
-                    "has_hitl": self.hitl is not None
+                    "has_hitl": self.hitl is not None,
+                    "redact_secrets": self.security.policy.redact_secrets
                 }
             }
             return json.dumps(manifest, indent=2)
@@ -88,6 +91,13 @@ class UniversalMCPBridge:
             self.watcher.watch_path(spec_dict_or_path)
 
         adapter = OpenAPIAdapter(spec_dict_or_path, base_url=interp_base_url, default_headers=interp_headers)
+        self._register_adapter_tools(adapter)
+        return self
+
+    def mount_graphql(self, endpoint_url: str, headers: Optional[Dict[str, str]] = None):
+        interp_headers = EnvInterpolator.interpolate(headers) if headers else None
+        interp_url = EnvInterpolator.interpolate_str(endpoint_url)
+        adapter = GraphQLAdapter(interp_url, headers=interp_headers)
         self._register_adapter_tools(adapter)
         return self
 
@@ -158,13 +168,17 @@ class UniversalMCPBridge:
         cache = self.cache
         hitl = self.hitl
         sensitive_tools = self.sensitive_tools
+        redact = self.security.policy.redact_secrets
 
         async def wrapped_handler(**kwargs):
+            # Redact arguments for audit logging
+            logged_args = PIISecretRedactor.redact_dict(kwargs) if redact else kwargs
+
             # HITL confirmation check
             if hitl and (not sensitive_tools or tool_def.name in sensitive_tools):
-                approved = await hitl.verify_approval(tool_def.name, kwargs)
+                approved = await hitl.verify_approval(tool_def.name, logged_args)
                 if not approved:
-                    audit_logger.log_call(tool_def.name, kwargs, 0, False, "User rejected execution")
+                    audit_logger.log_call(tool_def.name, logged_args, 0, False, "User rejected execution")
                     return f"Action '{tool_def.name}' was rejected by human operator."
 
             # Cache check
@@ -178,7 +192,7 @@ class UniversalMCPBridge:
                 try:
                     rate_limiter.check_and_record()
                 except RateLimitExceededError as e:
-                    audit_logger.log_call(tool_def.name, kwargs, 0, False, str(e))
+                    audit_logger.log_call(tool_def.name, logged_args, 0, False, str(e))
                     return f"Error: {e}"
 
             start_time = time.time()
@@ -190,6 +204,10 @@ class UniversalMCPBridge:
                 else:
                     res = handler_func(**kwargs)
 
+                # Secret redaction from response output
+                if redact and isinstance(res, str):
+                    res = PIISecretRedactor.redact_text(res)
+
                 if cache and success:
                     cache.set(tool_def.name, kwargs, res)
 
@@ -200,7 +218,7 @@ class UniversalMCPBridge:
                 return f"Execution Error: {e}"
             finally:
                 duration_ms = (time.time() - start_time) * 1000
-                audit_logger.log_call(tool_def.name, kwargs, duration_ms, success, error_msg)
+                audit_logger.log_call(tool_def.name, logged_args, duration_ms, success, error_msg)
 
         wrapped_handler.__name__ = tool_def.name
         wrapped_handler.__doc__ = tool_def.description

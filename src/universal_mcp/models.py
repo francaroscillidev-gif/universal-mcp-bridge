@@ -9,6 +9,7 @@ class AdapterType(str, Enum):
     SQLITE = "sqlite"
     POSTGRES = "postgres"
     REDIS = "redis"
+    GRAPHQL = "graphql"
 
 class RateLimitPolicy(BaseModel):
     max_requests: int = Field(default=60, description="Max requests in window")
@@ -36,6 +37,7 @@ class SecurityPolicy(BaseModel):
         description="Dangerous shell injection regex patterns"
     )
     max_output_length: int = Field(default=100000, description="Max response string size")
+    redact_secrets: bool = Field(default=True, description="Automatically mask tokens and passwords in output")
     rate_limit: Optional[RateLimitPolicy] = Field(default=None, description="Optional rate limiter configuration")
     cache: Optional[CachePolicy] = Field(default=None, description="Optional TTL cache configuration")
     hitl: Optional[HITLPolicy] = Field(default=None, description="Human-in-the-loop confirmation policy")

@@ -7,10 +7,12 @@ from universal_mcp.security.rate_limiter import RateLimiter, RateLimitExceededEr
 from universal_mcp.security.audit import AuditLogger
 from universal_mcp.security.cache import ResponseCache
 from universal_mcp.security.hitl import HumanInTheLoopManager, ConfirmationRequiredError
+from universal_mcp.security.redactor import PIISecretRedactor
 from universal_mcp.config import EnvInterpolator
 from universal_mcp.watcher import FileWatcher
 from universal_mcp.models import SecurityPolicy, RateLimitPolicy, CachePolicy, HITLPolicy
 from universal_mcp.adapters.openapi_adapter import OpenAPIAdapter
+from universal_mcp.adapters.graphql_adapter import GraphQLAdapter
 from universal_mcp.adapters.script_adapter import ScriptAdapter
 from universal_mcp.adapters.sqlite_adapter import SQLiteAdapter
 from universal_mcp.adapters.postgres_adapter import PostgresAdapter
@@ -50,6 +52,17 @@ def test_response_cache():
     assert cache.get("test_tool", args) is None
     cache.set("test_tool", args, "result_123")
     assert cache.get("test_tool", args) == "result_123"
+
+def test_secret_redactor():
+    text = "Connecting with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret and api_key='sk-ant-123456789012345678'"
+    redacted = PIISecretRedactor.redact_text(text)
+    assert "eyJhbGci" not in redacted
+    assert "sk-ant" not in redacted
+
+    data = {"user": "admin", "password": "supersecretpassword", "token": "xyz123"}
+    red_dict = PIISecretRedactor.redact_dict(data)
+    assert red_dict["password"] == "******[REDACTED]******"
+    assert red_dict["token"] == "******[REDACTED]******"
 
 @pytest.mark.asyncio
 async def test_hitl_blocks_unauthorized():
@@ -96,6 +109,12 @@ async def test_sqlite_adapter_schema_and_query():
 
     blocked_res = await query_handler("DELETE FROM users")
     assert "forbidden" in blocked_res
+
+def test_graphql_adapter_fallback():
+    gql = GraphQLAdapter("https://invalid-non-existent-domain.xyz/graphql")
+    tools = gql.discover_tools()
+    assert len(tools) == 1
+    assert tools[0][0].name == "graphql_query"
 
 def test_postgres_and_redis_adapters_discovery():
     pg = PostgresAdapter("postgresql://user:pass@localhost:5432/db")

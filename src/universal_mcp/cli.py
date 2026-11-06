@@ -38,6 +38,8 @@ def build_bridge_from_config(config_file: str, audit_log: str = None, interactiv
         m_target = item.get("target")
         if m_type == "openapi":
             bridge.mount_openapi(m_target, base_url=item.get("base_url"), headers=item.get("headers"))
+        elif m_type == "graphql":
+            bridge.mount_graphql(m_target, headers=item.get("headers"))
         elif m_type == "script":
             bridge.mount_script(m_target)
         elif m_type == "cli":
@@ -55,11 +57,12 @@ def build_bridge_from_config(config_file: str, audit_log: str = None, interactiv
 
 @click.group()
 def cli():
-    """Universal MCP Bridge - Turn OpenAPI, Scripts, Databases & CLIs into MCP Servers instantly."""
+    """Universal MCP Bridge - Turn OpenAPI, GraphQL, Scripts, Databases & CLIs into MCP Servers instantly."""
     pass
 
 @cli.command("serve")
 @click.option("--openapi", "openapi_path", help="Path or URL to OpenAPI JSON/YAML spec")
+@click.option("--graphql", "graphql_url", help="GraphQL endpoint URL")
 @click.option("--base-url", "base_url", help="Override base URL for OpenAPI calls")
 @click.option("--script", "script_path", help="Path to Python (.py) or Shell (.sh) script")
 @click.option("--cli", "cli_name", help="CLI tool to wrap (e.g. git, jq, curl)")
@@ -72,7 +75,7 @@ def cli():
 @click.option("--hitl", is_flag=True, help="Enable interactive terminal Human-in-the-Loop confirmations")
 @click.option("--transport", default="stdio", type=click.Choice(["stdio", "sse"]), help="MCP transport mode")
 @click.option("--port", default=8080, type=int, help="Port for SSE mode")
-def serve(openapi_path, base_url, script_path, cli_name, sqlite_path, postgres_dsn, redis_url, dir_path, config_file, audit_log, hitl, transport, port):
+def serve(openapi_path, graphql_url, base_url, script_path, cli_name, sqlite_path, postgres_dsn, redis_url, dir_path, config_file, audit_log, hitl, transport, port):
     """Start an MCP server exposing specified tools."""
     if config_file:
         bridge = build_bridge_from_config(config_file, audit_log=audit_log, interactive_hitl=hitl)
@@ -81,6 +84,8 @@ def serve(openapi_path, base_url, script_path, cli_name, sqlite_path, postgres_d
 
     if openapi_path:
         bridge.mount_openapi(openapi_path, base_url=base_url)
+    if graphql_url:
+        bridge.mount_graphql(graphql_url)
     if script_path:
         bridge.mount_script(script_path)
     if cli_name:
@@ -126,6 +131,7 @@ def dashboard(config_file, host, port):
 
 @cli.command("inspect")
 @click.option("--openapi", "openapi_path", help="Path or URL to OpenAPI JSON/YAML spec")
+@click.option("--graphql", "graphql_url", help="GraphQL endpoint URL")
 @click.option("--script", "script_path", help="Path to Python/Shell script")
 @click.option("--cli", "cli_name", help="CLI tool to wrap")
 @click.option("--sqlite", "sqlite_path", help="Path to SQLite database")
@@ -133,7 +139,7 @@ def dashboard(config_file, host, port):
 @click.option("--redis", "redis_url", help="Redis URL")
 @click.option("--dir", "dir_path", help="Directory with scripts & specs")
 @click.option("--config", "config_file", help="Path to YAML configuration")
-def inspect_tools(openapi_path, script_path, cli_name, sqlite_path, postgres_dsn, redis_url, dir_path, config_file):
+def inspect_tools(openapi_path, graphql_url, script_path, cli_name, sqlite_path, postgres_dsn, redis_url, dir_path, config_file):
     """Inspect and list tools that will be exposed without running the server."""
     if config_file:
         bridge = build_bridge_from_config(config_file)
@@ -142,6 +148,8 @@ def inspect_tools(openapi_path, script_path, cli_name, sqlite_path, postgres_dsn
 
     if openapi_path:
         bridge.mount_openapi(openapi_path)
+    if graphql_url:
+        bridge.mount_graphql(graphql_url)
     if script_path:
         bridge.mount_script(script_path)
     if cli_name:
@@ -207,6 +215,7 @@ audit_log: "mcp_audit.jsonl"
 security:
   timeout_seconds: 30
   max_output_length: 50000
+  redact_secrets: true
   allowed_commands:
     - python3
     - bash
@@ -232,6 +241,8 @@ mounts:
   #   target: "https://petstore.swagger.io/v2/swagger.json"
   #   headers:
   #     Authorization: "Bearer ${{API_KEY:-dev-token}}"
+  # - type: graphql
+  #   target: "https://countries.trevorblades.com/"
   # - type: sqlite
   #   target: "./data.db"
   #   read_only: true
