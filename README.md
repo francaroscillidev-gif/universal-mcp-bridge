@@ -1,3 +1,5 @@
+# Universal MCP Bridge & Proxy 🌉⚡
+
 <p align="center">
   <img src="assets/icon.svg" alt="Universal MCP Bridge & Proxy Logo" width="180" height="180" />
 </p>
@@ -11,10 +13,26 @@
   <a href="http://localhost:8000/healthz"><img src="https://img.shields.io/badge/health-passing-emerald.svg" alt="Health Status" /></a>
 </p>
 
-
-> **The Enterprise-Grade Gateway & Universal Proxy for the Model Context Protocol (MCP). Transform OpenAPI, GraphQL, Python/Bash scripts, CLIs, and Databases (SQLite, PostgreSQL, Redis) into secure MCP servers on the fly with Multi-Tenant RBAC, Workflow Pipeline Chaining, Cross-Platform Schema Export (OpenAI, Claude, OpenAPI), Prometheus metrics, Circuit Breakers, and Zero-Config Hot-Reload.**
+> **The Enterprise-Grade Gateway, Aggregator & Universal Proxy for the Model Context Protocol (MCP). Transform OpenAPI, GraphQL, Documents, Python/Bash scripts, CLIs, Databases (SQLite, PostgreSQL, Redis), and Upstream MCP Servers into secure, federated MCP endpoints on the fly with Multi-Tenant RBAC, Workflow Pipeline Chaining, Cross-Platform Schema Export, Prometheus metrics, and Zero-Config Hot-Reload.**
 
 L'adozione del **Model Context Protocol (MCP)** di Anthropic è lo standard de facto per connettere LLM e agenti intelligenti a tool esterni. **Universal MCP Bridge** posiziona la tua infrastruttura al centro di questo ecosistema, consentendo di governare, orchestrare ed esporre qualsiasi tool con standard enterprise di sicurezza, osservabilità e flessibilità.
+
+---
+
+## ⚡ Installazione 1-Line (Quickstart)
+
+Installa Universal MCP Bridge globalmente su qualsiasi sistema Linux o macOS in pochi secondi:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/francaroscillidev-gif/universal-mcp-bridge/main/install.sh | bash
+```
+
+Oppure con [uv](https://github.com/astral-sh/uv):
+```bash
+git clone https://github.com/francaroscillidev-gif/universal-mcp-bridge.git
+cd universal-mcp-bridge
+uv sync
+```
 
 ---
 
@@ -23,6 +41,8 @@ L'adozione del **Model Context Protocol (MCP)** di Anthropic è lo standard de f
 1. **Adattatori Multi-Sorgente Universali**:
    - **OpenAPI / REST**: Mappatura automatica di endpoint, path/query params e body JSON.
    - **GraphQL**: Introspezione dello schema (`__schema`), tipizzazione e argomenti.
+   - **Documenti & Knowledge Base (`DocumentSearchAdapter`)**: Ricerca fuzzy su cartelle di file (`.md`, `.txt`, `.csv`, `.json`, ecc.) e lettura a chunk paginati.
+   - **Federazione MCP-to-MCP (`MCPProxyAdapter`)**: Proxy trasparente per altri server MCP esistenti (es. GitHub MCP, Slack MCP) con wrapping dei nostri controlli di sicurezza.
    - **Script (Python & Bash)**: Ispezione docstring/commenti, argomenti CLI e standard input.
    - **CLI Tools**: Ispezione automatica dei sotto-comandi via `--help` (`git`, `curl`, `jq`, ecc.).
    - **Database Relazionali & In-Memory**:
@@ -43,18 +63,20 @@ L'adozione del **Model Context Protocol (MCP)** di Anthropic è lo standard de f
      - **OpenAPI 3.1 Specification** (`--format openapi`)
 5. **🧠 LLM Prompt Optimizer (`PromptOptimizer`)**:
    - Arricchisce semanticamente le descrizioni dei tool seguendo le linee guida di Anthropic e OpenAI, riducendo le allucinazioni e migliorando l'accuratezza del function calling.
-6. **⏳ Background Async Job Queue (`AsyncJobQueue`)**:
+6. **🧪 Interactive CLI Testing (`test-tool`)**:
+   - Esegui e testa qualsiasi tool montato direttamente da riga di comando per debugging rapido senza avviare LLM.
+7. **⏳ Background Async Job Queue (`AsyncJobQueue`)**:
    - Esecuzione asincrona per task e script pesanti con tracciamento stato e tool `job_status(job_id)`.
-7. **⚡ Runtime Hot-Mounting & Webhooks Gateway**:
+8. **⚡ Runtime Hot-Mounting & Webhooks Gateway**:
    - Aggiunta di nuovi tool a caldo via REST o Dashboard Web senza riavvio del processo.
    - Ricezione webhook esterni (`/api/webhooks/{source}`) per risvegliare l'agente via prompt notifications.
-8. **🛡️ Sicurezza & Resilienza Enterprise**:
+9. **🛡️ Sicurezza & Resilienza Enterprise**:
    - **Circuit Breaker Pattern**: Isolamento automatico di dipendenze a monte instabili.
    - **Security Sandbox**: Esecuzione asincrona senza shell=True, tokenizzazione `shlex`, blacklist anti-injection e timeout.
    - **Secret & PII Redactor**: Mascheramento automatico di token Bearer, API key e password.
    - **Human-in-the-Loop (HITL)**: Approvazione interattiva su terminale per comandi critici.
    - **Rate Limiting & Response Cache (TTL)**: Protezione da loop agentici e costi API.
-9. **Osservabilità & Web Dashboard**:
+10. **Osservabilità & Web Dashboard**:
    - **Live Web Dashboard**: UI moderna su porta 8000 con monitoraggio in tempo reale.
    - **Prometheus `/metrics`**: Integrazione standard Prometheus/Grafana per latenze e volumi.
    - **Healthcheck `/healthz`**: Pronto per Kubernetes liveness/readiness probes.
@@ -63,7 +85,12 @@ L'adozione del **Model Context Protocol (MCP)** di Anthropic è lo standard de f
 
 ## 🛠️ Comandi CLI Completi
 
-### 1. Avviare la Live Web Dashboard & Gateway
+### 1. Test Rapido di un Tool da Terminale
+```bash
+uv run universal-mcp test-tool --config examples/universal-mcp.yaml --name run_text_analyzer --args '{"args": "Hello World"}'
+```
+
+### 2. Avviare la Live Web Dashboard & Gateway
 ```bash
 uv run universal-mcp dashboard --config examples/universal-mcp.yaml --port 8000
 ```
@@ -72,7 +99,7 @@ uv run universal-mcp dashboard --config examples/universal-mcp.yaml --port 8000
 - Healthcheck: `http://localhost:8000/healthz`
 - Webhook Ingestion: `POST http://localhost:8000/api/webhooks/{source}`
 
-### 2. Esportazione Schema per altri Framework (OpenAI / Claude / OpenAPI)
+### 3. Esportazione Schema per altri Framework (OpenAI / Claude / OpenAPI)
 ```bash
 # Esporta per OpenAI Assistants o GPT-4o
 uv run universal-mcp export-schema --config examples/universal-mcp.yaml --format openai
@@ -84,14 +111,9 @@ uv run universal-mcp export-schema --config examples/universal-mcp.yaml --format
 uv run universal-mcp export-schema --config examples/universal-mcp.yaml --format openapi --output spec.json
 ```
 
-### 3. Generazione Token JWT Multi-Tenant (RBAC)
+### 4. Generazione Token JWT Multi-Tenant (RBAC)
 ```bash
 uv run universal-mcp generate-token --subject my-agent-1 --role analyst
-```
-
-### 4. Ottimizzazione delle descrizioni per gli Agenti AI
-```bash
-uv run universal-mcp optimize-prompts --config examples/universal-mcp.yaml
 ```
 
 ### 5. Avvio del Server MCP (Standard I/O o SSE)
@@ -110,6 +132,14 @@ uv run universal-mcp serve --config examples/universal-mcp.yaml --transport sse 
 ```bash
 uv run universal-mcp export-client-config --config examples/universal-mcp.yaml
 ```
+
+---
+
+## 📖 Guide all'Integrazione
+
+- [🤖 Guida Integrazione Claude Desktop](docs/claude_desktop.md)
+- [⚡ Guida Integrazione Cursor IDE](docs/cursor_ide.md)
+- [☸️ Manifesto Kubernetes (Deployment & Service)](docs/kubernetes_deployment.yaml)
 
 ---
 

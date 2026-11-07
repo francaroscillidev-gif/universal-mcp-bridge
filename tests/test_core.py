@@ -26,6 +26,8 @@ from universal_mcp.adapters.script_adapter import ScriptAdapter
 from universal_mcp.adapters.sqlite_adapter import SQLiteAdapter
 from universal_mcp.adapters.postgres_adapter import PostgresAdapter
 from universal_mcp.adapters.redis_adapter import RedisAdapter
+from universal_mcp.adapters.doc_adapter import DocumentSearchAdapter
+from universal_mcp.adapters.proxy_adapter import MCPProxyAdapter
 from universal_mcp.server import UniversalMCPBridge
 
 @pytest.mark.asyncio
@@ -126,6 +128,31 @@ async def test_workflow_pipeline_execution():
     res = await chainer.execute_pipeline(pipeline)
     assert res["success"] is True
     assert "SHA-256" in res["final_output"]
+
+@pytest.mark.asyncio
+async def test_doc_search_adapter():
+    adapter = DocumentSearchAdapter("examples")
+    tools = adapter.discover_tools()
+    assert len(tools) == 2
+    search_tool, search_handler = tools[0]
+    read_tool, read_handler = tools[1]
+
+    # Search
+    search_res = await search_handler("SHA256")
+    data = json.loads(search_res)
+    assert data["matches_count"] > 0
+
+    # Read chunk
+    read_res = await read_handler("text_analyzer.py", chunk_index=0)
+    read_data = json.loads(read_res)
+    assert "content" in read_data
+    assert "hashlib" in read_data["content"]
+
+def test_proxy_adapter_discovery():
+    proxy = MCPProxyAdapter("echo test", server_name="external_srv")
+    tools = proxy.discover_tools()
+    assert len(tools) == 1
+    assert tools[0][0].name == "upstream_external_srv_call"
 
 def test_prometheus_metrics():
     metrics_data, content_type = get_prometheus_metrics()

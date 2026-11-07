@@ -33,6 +33,9 @@ from universal_mcp.adapters.sqlite_adapter import SQLiteAdapter
 from universal_mcp.adapters.postgres_adapter import PostgresAdapter
 from universal_mcp.adapters.redis_adapter import RedisAdapter
 from universal_mcp.adapters.graphql_adapter import GraphQLAdapter
+from universal_mcp.adapters.doc_adapter import DocumentSearchAdapter
+from universal_mcp.adapters.proxy_adapter import MCPProxyAdapter
+
 
 class UniversalMCPBridge:
     """
@@ -189,6 +192,21 @@ class UniversalMCPBridge:
         adapter = RedisAdapter(interp_url, read_only=read_only)
         self._register_adapter_tools(adapter)
         return self
+
+    def mount_documents(self, directory_path: str, max_chunk_chars: int = 4000):
+        """Mounts a local folder of documents for chunked reading and fuzzy search."""
+        if os.path.exists(directory_path):
+            self.watcher.watch_path(directory_path)
+        adapter = DocumentSearchAdapter(directory_path, max_chunk_chars=max_chunk_chars)
+        self._register_adapter_tools(adapter)
+        return self
+
+    def mount_upstream_mcp(self, server_command: str, server_name: str):
+        """Federates and proxies an external MCP server into this bridge."""
+        adapter = MCPProxyAdapter(server_command=server_command, server_name=server_name, sandbox=self.security)
+        self._register_adapter_tools(adapter)
+        return self
+
 
     def mount_directory(self, dir_path: str):
         folder = Path(dir_path)

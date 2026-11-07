@@ -1,0 +1,2 @@
+from universal_mcp.adapters.doc_adapter import DocumentSearchAdapter
+from universal_mcp.adapters.proxy_adapter import MCPProxyAdapter

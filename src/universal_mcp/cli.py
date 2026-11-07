@@ -52,8 +52,13 @@ def build_bridge_from_config(config_file: str, audit_log: str = None, interactiv
             bridge.mount_postgres(m_target, read_only=item.get("read_only", True))
         elif m_type == "redis":
             bridge.mount_redis(m_target, read_only=item.get("read_only", True))
+        elif m_type == "documents":
+            bridge.mount_documents(m_target, max_chunk_chars=item.get("max_chunk_chars", 4000))
+        elif m_type == "upstream_mcp":
+            bridge.mount_upstream_mcp(m_target, server_name=item.get("name", "upstream"))
         elif m_type == "directory":
             bridge.mount_directory(m_target)
+
 
     if optimize_prompts:
         bridge.optimize_descriptions()
@@ -128,6 +133,46 @@ def serve(openapi_path, graphql_url, base_url, script_path, cli_name, sqlite_pat
         bridge.run_stdio()
     else:
         bridge.run_sse(port=port)
+
+@cli.command("test-tool")
+@click.option("--config", "config_file", default="examples/universal-mcp.yaml", help="Path to YAML configuration")
+@click.option("--name", "tool_name", required=True, help="Tool name to execute")
+@click.option("--args", "args_json", default="{}", help="JSON string of arguments")
+def test_tool_cmd(config_file, tool_name, args_json):
+    """Directly test and invoke an MCP tool from CLI without starting an LLM client."""
+    import asyncio
+    bridge = build_bridge_from_config(config_file)
+    tool = next((t for t in bridge.registered_tools if t.name == tool_name), None)
+    if not tool:
+        console.print(f"[bold red]Error:[/bold red] Tool '{tool_name}' not found in configuration.")
+        console.print(f"Available tools: {', '.join([t.name for t in bridge.registered_tools])}")
+        return
+
+    try:
+        kwargs = json.loads(args_json)
+    except Exception as e:
+        console.print(f"[bold red]Error parsing --args JSON:[/bold red] {e}")
+        return
+
+    console.print(f"[bold cyan]Invoking tool:[/bold cyan] {tool_name}")
+    console.print(f"[bold cyan]Arguments:[/bold cyan] {kwargs}\n")
+
+    async def _run():
+        res = await bridge.server.call_tool(tool_name, kwargs)
+        text_out = ""
+        if hasattr(res, "content"):
+            for c in res.content:
+                text_out += getattr(c, "text", str(c))
+        else:
+            text_out = str(res)
+        return text_out
+
+    try:
+        output = asyncio.run(_run())
+        console.print(f"[bold green]Result:[/bold green]\n{output}")
+    except Exception as e:
+        console.print(f"[bold red]Execution failed:[/bold red] {e}")
+
 
 @cli.command("export-schema")
 @click.option("--config", "config_file", default="examples/universal-mcp.yaml", help="Path to YAML configuration")
