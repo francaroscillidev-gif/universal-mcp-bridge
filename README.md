@@ -5,72 +5,101 @@
 [![Prometheus Metrics](https://img.shields.io/badge/metrics-Prometheus-orange.svg)](http://localhost:8000/metrics)
 [![Health Status](https://img.shields.io/badge/health-passing-emerald.svg)](http://localhost:8000/healthz)
 
-> **Trasforma qualsiasi specifica OpenAPI, endpoint GraphQL, script Python/Bash, CLI o Database (SQLite, PostgreSQL, Redis) in un server MCP (Model Context Protocol) di livello enterprise al volo, con Prompt Optimization per LLM, Background Async Job Queue, Hot-Mounting a runtime, Webhook Ingestion, Prometheus metrics, Circuit Breaker, live dashboard e zero-config.**
+> **The Enterprise-Grade Gateway & Universal Proxy for the Model Context Protocol (MCP). Transform OpenAPI, GraphQL, Python/Bash scripts, CLIs, and Databases (SQLite, PostgreSQL, Redis) into secure MCP servers on the fly with Multi-Tenant RBAC, Workflow Pipeline Chaining, Cross-Platform Schema Export (OpenAI, Claude, OpenAPI), Prometheus metrics, Circuit Breakers, and Zero-Config Hot-Reload.**
 
-L'adozione del **Model Context Protocol (MCP)** di Anthropic è lo standard de facto per connettere LLM e agenti a tool esterni. **Universal MCP Bridge** elimina ogni lavoro manuale e permette di esporre e gestire istantaneamente qualsiasi risorsa preesistente in un server MCP ad alte prestazioni pronto per la produzione.
+L'adozione del **Model Context Protocol (MCP)** di Anthropic è lo standard de facto per connettere LLM e agenti intelligenti a tool esterni. **Universal MCP Bridge** posiziona la tua infrastruttura al centro di questo ecosistema, consentendo di governare, orchestrare ed esporre qualsiasi tool con standard enterprise di sicurezza, osservabilità e flessibilità.
 
 ---
 
-## 🚀 Architettura & Funzionalità
+## 🚀 Architettura & Funzionalità Top Tier
 
-1. **Adattatori Multi-Sorgente**:
-   - **OpenAPI / REST**: Mappa automaticamente endpoint con conversione tipi, query params e body JSON.
-   - **GraphQL**: Introspezione automatica schema (`__schema`), mappatura campi e argomenti.
+1. **Adattatori Multi-Sorgente Universali**:
+   - **OpenAPI / REST**: Mappatura automatica di endpoint, path/query params e body JSON.
+   - **GraphQL**: Introspezione dello schema (`__schema`), tipizzazione e argomenti.
    - **Script (Python & Bash)**: Ispezione docstring/commenti, argomenti CLI e standard input.
-   - **CLI Tools**: Ispezione automatica dei sotto-comandi tramite `--help` (`git`, `curl`, `jq`, ecc.).
+   - **CLI Tools**: Ispezione automatica dei sotto-comandi via `--help` (`git`, `curl`, `jq`, ecc.).
    - **Database Relazionali & In-Memory**:
-     - **SQLite**: Schema inspector e query SQL sicure read-only.
+     - **SQLite**: Schema inspector e query SQL con blocco read-only.
      - **PostgreSQL**: Connection pooling async (`asyncpg`) e ispezione DDL.
-     - **Redis**: Navigazione chiavi per pattern e recupero valori (stringhe, hash, liste, set).
-2. **🧠 LLM Prompt Optimizer (`PromptOptimizer`)**:
-   - Riscrive e arricchisce semanticamente le descrizioni dei tool e dei parametri usando le linee guida ufficiali Anthropic/OpenAI, specificando formati di ritorno ed eliminando ambiguità per gli agenti AI.
-3. **⏳ Background Async Job Queue (`AsyncJobQueue`)**:
-   - Esecuzione non bloccante in background per task computazionali lunghi, migrazioni o script pesanti con polling di stato (`job_status`).
-4. **⚡ Runtime Hot-Mounting & Dynamic Registry**:
-   - Monta nuovi script, API o database a caldo via REST API (`/api/registry/mount`) o direttamente dall'interfaccia grafica della Dashboard, **senza riavviare il server MCP**.
-5. **📡 Inbound Webhooks & Event Ingestion (`/api/webhooks/{source}`)**:
-   - Ricevi eventi asincroni (GitHub push, Stripe payments, Datadog alerts) e trasformali in prompt notification strutturate pronte per il risveglio dell'agente LLM.
-6. **Sicurezza & Resilienza Enterprise**:
-   - **Circuit Breaker Pattern**: Isolamento automatico dei tool a monte in caso di guasti ripetuti.
-   - **Security Sandbox**: Esecuzione asincrona senza `shell=True`, tokenizzazione `shlex`, blacklist anti-injection, directory containment e timeout.
-   - **Secret & PII Redactor**: Mascheramento automatico di token Bearer, API key e password da risposte e log di audit.
-   - **Human-in-the-Loop (HITL)**: Modalità di conferma manuale/interattiva per comandi sensibili prima dell'esecuzione.
-   - **Rate Limiting**: Algoritmo a finestra mobile configurabile.
-   - **Response Caching (TTL)**: Cache in-memory per risposte a latenza 0ms e protezione da costi/rate-limit.
-7. **Osservabilità & Web Dashboard**:
-   - **Live Web Dashboard**: Interfaccia web moderna su porta 8000 con monitoraggio real-time di tool, stato server, feed webhooks e audit log.
-   - **Prometheus `/metrics`**: Metriche native per Prometheus / Grafana (`mcp_tool_calls_total`, `mcp_tool_execution_duration_seconds`, `mcp_cache_hits_total`, `mcp_rate_limit_exceeded_total`).
-   - **Healthcheck `/healthz`**: Endpoint di liveness/readiness per Kubernetes e Docker.
-   - **Audit Log Strutturato**: Scrittura in tempo reale su file `.jsonl` di latenze, argomenti, esiti ed errori.
+     - **Redis**: Navigazione chiavi e recupero tipi complessi (string, hash, list, set).
+2. **🔐 Multi-Tenant Role-Based Access Control (RBAC)**:
+   - Autenticazione e autorizzazione tramite token **JWT** firmati crittograficamente.
+   - Ruoli granulari (`admin`, `analyst`, `agent`) con whitelist e blacklist dinamiche su pattern di tool.
+   - Generazione chiavi con comando dedicato: `universal-mcp generate-token`.
+3. **⛓️ Multi-Step Workflow Pipeline Chaining (`WorkflowChainer`)**:
+   - Concatena tool MCP eterogenei in una singola pipeline logica (es. estrai da DB -> analizza con script Python -> invia via API REST).
+   - Risoluzione automatica delle variabili con sintassi `{{step_1.output}}` ed esecuzione non bloccante.
+4. **🌐 Cross-Platform Schema Exporter (`SchemaExporter`)**:
+   - Esporta all'istante l'intero catalogo dei tool montati in formato:
+     - **OpenAI Function Calling / Assistants API** (`--format openai`)
+     - **Anthropic Claude Tool Use** (`--format anthropic`)
+     - **OpenAPI 3.1 Specification** (`--format openapi`)
+5. **🧠 LLM Prompt Optimizer (`PromptOptimizer`)**:
+   - Arricchisce semanticamente le descrizioni dei tool seguendo le linee guida di Anthropic e OpenAI, riducendo le allucinazioni e migliorando l'accuratezza del function calling.
+6. **⏳ Background Async Job Queue (`AsyncJobQueue`)**:
+   - Esecuzione asincrona per task e script pesanti con tracciamento stato e tool `job_status(job_id)`.
+7. **⚡ Runtime Hot-Mounting & Webhooks Gateway**:
+   - Aggiunta di nuovi tool a caldo via REST o Dashboard Web senza riavvio del processo.
+   - Ricezione webhook esterni (`/api/webhooks/{source}`) per risvegliare l'agente via prompt notifications.
+8. **🛡️ Sicurezza & Resilienza Enterprise**:
+   - **Circuit Breaker Pattern**: Isolamento automatico di dipendenze a monte instabili.
+   - **Security Sandbox**: Esecuzione asincrona senza shell=True, tokenizzazione `shlex`, blacklist anti-injection e timeout.
+   - **Secret & PII Redactor**: Mascheramento automatico di token Bearer, API key e password.
+   - **Human-in-the-Loop (HITL)**: Approvazione interattiva su terminale per comandi critici.
+   - **Rate Limiting & Response Cache (TTL)**: Protezione da loop agentici e costi API.
+9. **Osservabilità & Web Dashboard**:
+   - **Live Web Dashboard**: UI moderna su porta 8000 con monitoraggio in tempo reale.
+   - **Prometheus `/metrics`**: Integrazione standard Prometheus/Grafana per latenze e volumi.
+   - **Healthcheck `/healthz`**: Pronto per Kubernetes liveness/readiness probes.
 
 ---
 
-## 🛠️ Comandi CLI
+## 🛠️ Comandi CLI Completi
 
-### 1. Ottimizzazione delle descrizioni per gli Agenti AI
+### 1. Avviare la Live Web Dashboard & Gateway
+```bash
+uv run universal-mcp dashboard --config examples/universal-mcp.yaml --port 8000
+```
+- Web UI: `http://localhost:8000`
+- Metriche Prometheus: `http://localhost:8000/metrics`
+- Healthcheck: `http://localhost:8000/healthz`
+- Webhook Ingestion: `POST http://localhost:8000/api/webhooks/{source}`
+
+### 2. Esportazione Schema per altri Framework (OpenAI / Claude / OpenAPI)
+```bash
+# Esporta per OpenAI Assistants o GPT-4o
+uv run universal-mcp export-schema --config examples/universal-mcp.yaml --format openai
+
+# Esporta per Claude Tool Use
+uv run universal-mcp export-schema --config examples/universal-mcp.yaml --format anthropic
+
+# Esporta come specifica OpenAPI 3.1
+uv run universal-mcp export-schema --config examples/universal-mcp.yaml --format openapi --output spec.json
+```
+
+### 3. Generazione Token JWT Multi-Tenant (RBAC)
+```bash
+uv run universal-mcp generate-token --subject my-agent-1 --role analyst
+```
+
+### 4. Ottimizzazione delle descrizioni per gli Agenti AI
 ```bash
 uv run universal-mcp optimize-prompts --config examples/universal-mcp.yaml
 ```
 
-### 2. Avviare la Live Web Dashboard & Gateway
+### 5. Avvio del Server MCP (Standard I/O o SSE)
 ```bash
-uv run universal-mcp dashboard --config examples/universal-mcp.yaml --port 8000
-```
-- Dashboard Web: `http://localhost:8000`
-- Metriche Prometheus: `http://localhost:8000/metrics`
-- Healthcheck: `http://localhost:8000/healthz`
-- Endpoint Webhooks: `POST http://localhost:8000/api/webhooks/{source}`
-
-### 3. Avvio del Server MCP (con opzione `--optimize`)
-```bash
-# Modalità stdio con ottimizzazione semantica automatica dei prompt
+# Modalità standard I/O (Claude Desktop, Cursor, Antigravity) con Prompt Optimization
 uv run universal-mcp serve --config examples/universal-mcp.yaml --optimize --transport stdio
 
-# Con Human-in-the-Loop interattivo
+# Modalità con Human-in-the-Loop attivo
 uv run universal-mcp serve --config examples/universal-mcp.yaml --hitl
+
+# Modalità SSE per microservizi di rete
+uv run universal-mcp serve --config examples/universal-mcp.yaml --transport sse --port 8080
 ```
 
-### 4. Esportare la configurazione per Claude Desktop / Cursor
+### 6. Esportare la configurazione 1-Click per Claude Desktop / Cursor
 ```bash
 uv run universal-mcp export-client-config --config examples/universal-mcp.yaml
 ```
@@ -101,7 +130,6 @@ If you have questions, feedback, enterprise integration requests, or custom agen
 - **Email**: [francaroscillidev@gmail.com](mailto:francaroscillidev@gmail.com)
 - **GitHub**: [@francaroscillidev-gif](https://github.com/francaroscillidev-gif)
 - **Bug Reports & Feature Requests**: [Open an issue on GitHub](https://github.com/francaroscillidev-gif/universal-mcp-bridge/issues)
-
 
 ---
 

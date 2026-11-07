@@ -9,14 +9,17 @@ from universal_mcp.security.cache import ResponseCache
 from universal_mcp.security.hitl import HumanInTheLoopManager, ConfirmationRequiredError
 from universal_mcp.security.redactor import PIISecretRedactor
 from universal_mcp.security.circuit_breaker import CircuitBreaker
+from universal_mcp.security.rbac import RBACManager
 from universal_mcp.security.metrics import get_prometheus_metrics
 from universal_mcp.registry import DynamicToolRegistry
 from universal_mcp.webhook import WebhookDispatcher
 from universal_mcp.optimizer import PromptOptimizer
 from universal_mcp.jobs import AsyncJobQueue
+from universal_mcp.exporter import SchemaExporter
+from universal_mcp.workflow import WorkflowChainer, WorkflowPipeline, PipelineStep
 from universal_mcp.config import EnvInterpolator
 from universal_mcp.watcher import FileWatcher
-from universal_mcp.models import SecurityPolicy, RateLimitPolicy, CachePolicy, HITLPolicy
+from universal_mcp.models import SecurityPolicy, RateLimitPolicy, CachePolicy, HITLPolicy, DynamicToolDef, ToolParameter
 from universal_mcp.adapters.openapi_adapter import OpenAPIAdapter
 from universal_mcp.adapters.graphql_adapter import GraphQLAdapter
 from universal_mcp.adapters.script_adapter import ScriptAdapter
@@ -73,6 +76,56 @@ def test_circuit_breaker():
     assert cb.state == "HALF_OPEN"
     cb.record_success()
     assert cb.state == "CLOSED"
+
+def test_rbac_manager():
+    rbac = RBACManager(secret_key="my-test-secret-key-32-bytes-long!")
+    token = rbac.generate_token("test_user", role="analyst")
+    data = rbac.verify_token(token)
+    assert data["role"] == "analyst"
+
+    assert rbac.is_tool_allowed("analyst", "db_sample_query") is True
+    assert rbac.is_tool_allowed("analyst", "exec_curl") is False
+    assert rbac.is_tool_allowed("admin", "exec_curl") is True
+
+def test_schema_exporter():
+    tools = [
+        DynamicToolDef(
+            name="test_tool",
+            description="A test tool",
+            parameters=[ToolParameter(name="param1", type="string", required=True)]
+        )
+    ]
+    openai_tools = SchemaExporter.to_openai_tools(tools)
+    assert len(openai_tools) == 1
+    assert openai_tools[0]["function"]["name"] == "test_tool"
+
+    anthropic_tools = SchemaExporter.to_anthropic_tools(tools)
+    assert len(anthropic_tools) == 1
+    assert "input_schema" in anthropic_tools[0]
+
+    openapi_spec = SchemaExporter.to_openapi_spec(tools)
+    assert "/tools/test_tool" in openapi_spec["paths"]
+
+@pytest.mark.asyncio
+async def test_workflow_pipeline_execution():
+    bridge = UniversalMCPBridge(name="PipeBridge")
+    bridge.mount_script("examples/text_analyzer.py")
+
+    pipeline = WorkflowPipeline(
+        pipeline_id="pipe_1",
+        name="Test Pipeline",
+        steps=[
+            PipelineStep(
+                step_id="step_1",
+                tool_name="run_text_analyzer",
+                args_template={"args": "first run input"}
+            )
+        ]
+    )
+    chainer = WorkflowChainer(bridge)
+    res = await chainer.execute_pipeline(pipeline)
+    assert res["success"] is True
+    assert "SHA-256" in res["final_output"]
 
 def test_prometheus_metrics():
     metrics_data, content_type = get_prometheus_metrics()

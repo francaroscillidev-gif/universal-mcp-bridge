@@ -13,6 +13,7 @@ from universal_mcp.models import SecurityPolicy
 from universal_mcp.config import EnvInterpolator
 from universal_mcp.dashboard import create_dashboard_app
 from universal_mcp.optimizer import PromptOptimizer
+from universal_mcp.exporter import SchemaExporter
 
 load_dotenv()
 console = Console()
@@ -118,6 +119,8 @@ def serve(openapi_path, graphql_url, base_url, script_path, cli_name, sqlite_pat
         sys.stderr.write(f"[Universal MCP] Response caching enabled (TTL: {bridge.cache.default_ttl}s)\n")
     if bridge.hitl:
         sys.stderr.write("[Universal MCP] Human-in-the-Loop (HITL) protection enabled.\n")
+    if bridge.rbac:
+        sys.stderr.write("[Universal MCP] Multi-tenant RBAC enforcement enabled.\n")
     for tool in bridge.registered_tools:
         sys.stderr.write(f"  -> Tool: {tool.name} ({tool.description[:60]}...)\n")
 
@@ -125,6 +128,44 @@ def serve(openapi_path, graphql_url, base_url, script_path, cli_name, sqlite_pat
         bridge.run_stdio()
     else:
         bridge.run_sse(port=port)
+
+@cli.command("export-schema")
+@click.option("--config", "config_file", default="examples/universal-mcp.yaml", help="Path to YAML configuration")
+@click.option("--format", "export_fmt", type=click.Choice(["openai", "anthropic", "openapi"]), default="openai", help="Target tool format")
+@click.option("--output", "out_file", help="File to write exported JSON")
+def export_schema_cmd(config_file, export_fmt, out_file):
+    """Export tool schemas to OpenAI Tools, Anthropic Tools, or OpenAPI format."""
+    bridge = build_bridge_from_config(config_file)
+    tools = bridge.registered_tools
+
+    if export_fmt == "openai":
+        res = SchemaExporter.to_openai_tools(tools)
+    elif export_fmt == "anthropic":
+        res = SchemaExporter.to_anthropic_tools(tools)
+    else:
+        res = SchemaExporter.to_openapi_spec(tools, server_title=bridge.name)
+
+    json_str = json.dumps(res, indent=2)
+    if out_file:
+        with open(out_file, "w", encoding="utf-8") as f:
+            f.write(json_str)
+        console.print(f"[bold green]Exported {len(tools)} tools to '{out_file}' in {export_fmt} format.[/bold green]")
+    else:
+        console.print(json_str)
+
+@cli.command("generate-token")
+@click.option("--subject", prompt="Agent or User ID", help="Subject name")
+@click.option("--role", type=click.Choice(["admin", "analyst", "agent"]), default="agent", help="Assigned RBAC role")
+@click.option("--tenant", default="default", help="Tenant ID")
+@click.option("--secret", default="super-secret-mcp-key", help="JWT secret key")
+def generate_token_cmd(subject, role, tenant, secret):
+    """Generate a signed multi-tenant RBAC JWT token for agent authentication."""
+    from universal_mcp.security.rbac import RBACManager
+    rbac = RBACManager(secret_key=secret)
+    token = rbac.generate_token(subject=subject, role=role, tenant_id=tenant)
+    console.print(f"\n[bold green]Generated JWT Token for '{subject}' (Role: {role}):[/bold green]\n")
+    console.print(token)
+    console.print("\nPass this token to tools via `_auth_token` or `Authorization: Bearer <token>`.")
 
 @cli.command("optimize-prompts")
 @click.option("--config", "config_file", default="examples/universal-mcp.yaml", help="Path to YAML configuration")
@@ -258,6 +299,9 @@ security:
   hitl:
     require_confirmation: false
     sensitive_tools: []
+  rbac:
+    enabled: false
+    jwt_secret: "super-secret-mcp-key"
 
 mounts:
   # - type: openapi

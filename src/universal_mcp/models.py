@@ -29,6 +29,17 @@ class HITLPolicy(BaseModel):
     require_confirmation: bool = Field(default=False, description="Require human approval for sensitive tools")
     sensitive_tools: List[str] = Field(default_factory=list, description="Explicit tools requiring approval")
 
+class RBACPolicy(BaseModel):
+    enabled: bool = Field(default=False, description="Enable Role-Based Access Control")
+    jwt_secret: str = Field(default="super-secret-mcp-key", description="JWT validation secret")
+    roles: Dict[str, Dict[str, List[str]]] = Field(
+        default_factory=lambda: {
+            "admin": {"allowed": ["*"], "denied": []},
+            "analyst": {"allowed": ["db_*", "postgres_*", "find*"], "denied": []},
+            "agent": {"allowed": ["*"], "denied": ["exec_curl", "run_sys_health"]}
+        }
+    )
+
 class SecurityPolicy(BaseModel):
     allowed_commands: Optional[List[str]] = Field(default=None, description="Whitelist of allowed executable commands")
     blocked_commands: List[str] = Field(
@@ -47,6 +58,7 @@ class SecurityPolicy(BaseModel):
     cache: Optional[CachePolicy] = Field(default=None, description="Optional TTL cache configuration")
     circuit_breaker: Optional[CircuitBreakerPolicy] = Field(default_factory=CircuitBreakerPolicy, description="Circuit breaker configuration")
     hitl: Optional[HITLPolicy] = Field(default=None, description="Human-in-the-loop confirmation policy")
+    rbac: Optional[RBACPolicy] = Field(default=None, description="Role-based access control policy")
 
 class ToolParameter(BaseModel):
     name: str

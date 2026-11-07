@@ -8,6 +8,7 @@ import yaml
 
 from mcp.server.mcpserver import MCPServer
 from universal_mcp.models import SecurityPolicy, DynamicToolDef
+from universal_mcp.security.rbac import RoleDefinition, RBACManager
 from universal_mcp.security.sandbox import CommandSandbox
 from universal_mcp.security.rate_limiter import RateLimiter, RateLimitExceededError
 from universal_mcp.security.audit import AuditLogger
@@ -15,12 +16,14 @@ from universal_mcp.security.cache import ResponseCache
 from universal_mcp.security.hitl import HumanInTheLoopManager, ConfirmationRequiredError
 from universal_mcp.security.redactor import PIISecretRedactor
 from universal_mcp.security.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from universal_mcp.security.rbac import RBACManager
 from universal_mcp.security.metrics import (
     TOOL_CALLS_TOTAL, TOOL_EXECUTION_DURATION_SECONDS,
     CACHE_HITS_TOTAL, RATE_LIMIT_EXCEEDED_TOTAL
 )
 from universal_mcp.optimizer import PromptOptimizer
 from universal_mcp.jobs import AsyncJobQueue
+from universal_mcp.workflow import WorkflowChainer, WorkflowPipeline
 from universal_mcp.watcher import FileWatcher
 from universal_mcp.config import EnvInterpolator
 from universal_mcp.adapters.openapi_adapter import OpenAPIAdapter
@@ -34,7 +37,7 @@ from universal_mcp.adapters.graphql_adapter import GraphQLAdapter
 class UniversalMCPBridge:
     """
     Enterprise-grade Bridge & Proxy engine with Prometheus metrics,
-    Circuit Breakers, Secret Redaction, Async Jobs, and Prompt Optimization.
+    Circuit Breakers, RBAC, Multi-step Pipelines, Secret Redaction, Async Jobs, and Prompt Optimization.
     """
     def __init__(
         self,
@@ -67,11 +70,26 @@ class UniversalMCPBridge:
             self.hitl = None
             self.sensitive_tools = set()
 
+        # RBAC setup
+        rbac_policy = self.security.policy.rbac
+        if rbac_policy and rbac_policy.enabled:
+            roles_dict = {}
+            for r_name, r_conf in rbac_policy.roles.items():
+                roles_dict[r_name] = RoleDefinition(
+                    name=r_name,
+                    allowed_tools=r_conf.get("allowed", ["*"]),
+                    denied_tools=r_conf.get("denied", [])
+                )
+            self.rbac = RBACManager(secret_key=rbac_policy.jwt_secret, roles=roles_dict)
+        else:
+            self.rbac = None
+
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
         self.cb_policy = self.security.policy.circuit_breaker
 
         self.audit_logger = AuditLogger(audit_log_path)
         self.job_queue = AsyncJobQueue()
+        self.workflow_chainer = WorkflowChainer(self)
         self.watcher = FileWatcher()
         self.registered_tools: List[DynamicToolDef] = []
         self._setup_system_resources()
@@ -90,6 +108,7 @@ class UniversalMCPBridge:
                     "has_rate_limit": self.rate_limiter is not None,
                     "has_cache": self.cache is not None,
                     "has_hitl": self.hitl is not None,
+                    "has_rbac": self.rbac is not None,
                     "redact_secrets": self.security.policy.redact_secrets,
                     "has_circuit_breaker": self.cb_policy.enabled if self.cb_policy else False
                 }
@@ -97,7 +116,7 @@ class UniversalMCPBridge:
             return json.dumps(manifest, indent=2)
 
     def _setup_system_tools(self):
-        """Registers built-in system tools for managing async jobs."""
+        """Registers built-in system tools for managing async jobs and pipelines."""
         @self.server.tool()
         def job_status(job_id: str) -> str:
             """Check the status and result of a background asynchronous job."""
@@ -105,6 +124,18 @@ class UniversalMCPBridge:
             if not job:
                 return json.dumps({"error": f"Job '{job_id}' not found"})
             return json.dumps(job.model_dump(), indent=2)
+
+        @self.server.tool()
+        async def run_pipeline(pipeline_definition: str, initial_inputs_json: str = "{}") -> str:
+            """Execute a multi-step workflow pipeline chaining multiple MCP tools sequentially."""
+            try:
+                pipe_dict = json.loads(pipeline_definition)
+                pipeline = WorkflowPipeline(**pipe_dict)
+                initial_inputs = json.loads(initial_inputs_json) if initial_inputs_json else {}
+                res = await self.workflow_chainer.execute_pipeline(pipeline, initial_inputs)
+                return json.dumps(res, indent=2)
+            except Exception as e:
+                return json.dumps({"error": f"Pipeline execution failed: {e}"})
 
     def optimize_descriptions(self):
         """Enriches all registered tools descriptions for better LLM comprehension."""
@@ -196,6 +227,7 @@ class UniversalMCPBridge:
         hitl = self.hitl
         sensitive_tools = self.sensitive_tools
         redact = self.security.policy.redact_secrets
+        rbac = self.rbac
 
         if self.cb_policy and self.cb_policy.enabled:
             cb = CircuitBreaker(
@@ -208,6 +240,19 @@ class UniversalMCPBridge:
 
         async def wrapped_handler(**kwargs):
             logged_args = PIISecretRedactor.redact_dict(kwargs) if redact else kwargs
+
+            # RBAC Check (if caller provided _auth_token or context role)
+            caller_token = kwargs.pop("_auth_token", None)
+            if rbac and caller_token:
+                try:
+                    token_data = rbac.verify_token(caller_token)
+                    role = token_data.get("role", "agent")
+                    if not rbac.is_tool_allowed(role, tool_def.name):
+                        msg = f"RBAC Access Denied: Role '{role}' cannot invoke tool '{tool_def.name}'"
+                        audit_logger.log_call(tool_def.name, logged_args, 0, False, msg)
+                        return f"Error: {msg}"
+                except Exception as e:
+                    return f"Authentication Error: {e}"
 
             # Circuit Breaker check
             if cb and not cb.can_execute():
@@ -274,6 +319,8 @@ class UniversalMCPBridge:
                 TOOL_EXECUTION_DURATION_SECONDS.labels(tool_name=tool_def.name).observe(duration)
                 audit_logger.log_call(tool_def.name, logged_args, duration * 1000, success, error_msg)
 
+        import functools
+        functools.update_wrapper(wrapped_handler, handler_func)
         wrapped_handler.__name__ = tool_def.name
         wrapped_handler.__doc__ = tool_def.description
 
