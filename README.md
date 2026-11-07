@@ -1,9 +1,16 @@
-# Universal MCP Bridge & Proxy 🌉⚡
+<p align="center">
+  <img src="assets/icon.svg" alt="Universal MCP Bridge & Proxy Logo" width="180" height="180" />
+</p>
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Prometheus Metrics](https://img.shields.io/badge/metrics-Prometheus-orange.svg)](http://localhost:8000/metrics)
-[![Health Status](https://img.shields.io/badge/health-passing-emerald.svg)](http://localhost:8000/healthz)
+<h1 align="center">Universal MCP Bridge &amp; Proxy 🌉⚡</h1>
+
+<p align="center">
+  <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0" /></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+" /></a>
+  <a href="http://localhost:8000/metrics"><img src="https://img.shields.io/badge/metrics-Prometheus-orange.svg" alt="Prometheus Metrics" /></a>
+  <a href="http://localhost:8000/healthz"><img src="https://img.shields.io/badge/health-passing-emerald.svg" alt="Health Status" /></a>
+</p>
+
 
 > **The Enterprise-Grade Gateway & Universal Proxy for the Model Context Protocol (MCP). Transform OpenAPI, GraphQL, Python/Bash scripts, CLIs, and Databases (SQLite, PostgreSQL, Redis) into secure MCP servers on the fly with Multi-Tenant RBAC, Workflow Pipeline Chaining, Cross-Platform Schema Export (OpenAI, Claude, OpenAPI), Prometheus metrics, Circuit Breakers, and Zero-Config Hot-Reload.**
 
